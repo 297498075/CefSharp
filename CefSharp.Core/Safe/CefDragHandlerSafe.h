@@ -48,14 +48,6 @@ public:
         }
     }
 
-    virtual void OnDraggableRegionsChanged (CefRefPtr<CefBrowser> browser, const int & regions) OVERRIDE {
-        if (this->appDomainId != System::AppDomain::CurrentDomain->Id) {
-             msclr::call_in_appdomain(appDomainId, &_OnDraggableRegionsChanged, wrapped, browser, regions);
-        } else {
-            _OnDraggableRegionsChanged(wrapped, browser, regions);
-        }
-    }
-
 private:
     CefRefCount refct;
     CefDragHandler* wrapped;

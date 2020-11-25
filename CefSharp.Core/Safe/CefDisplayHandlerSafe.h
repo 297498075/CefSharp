@@ -56,14 +56,6 @@ public:
         }
     }
 
-    virtual void OnFaviconURLChange (CefRefPtr<CefBrowser> browser, const int & icon_urls) OVERRIDE {
-        if (this->appDomainId != System::AppDomain::CurrentDomain->Id) {
-             msclr::call_in_appdomain(appDomainId, &_OnFaviconURLChange, wrapped, browser, icon_urls);
-        } else {
-            _OnFaviconURLChange(wrapped, browser, icon_urls);
-        }
-    }
-
     virtual void OnFullscreenModeChange (CefRefPtr<CefBrowser> browser, bool fullscreen) OVERRIDE {
         if (this->appDomainId != System::AppDomain::CurrentDomain->Id) {
              msclr::call_in_appdomain(appDomainId, &_OnFullscreenModeChange, wrapped, browser, fullscreen);

@@ -40,14 +40,6 @@ public:
         return refct.HasOneRef(); 
     }
 
-    virtual bool OnFileDialog (CefRefPtr<CefBrowser> browser, FileDialogMode mode, const CefString & title, const CefString & default_file_path, const int & accept_filters, int selected_accept_filter, CefRefPtr<CefFileDialogCallback> callback) OVERRIDE {
-        if (this->appDomainId != System::AppDomain::CurrentDomain->Id) {
-            return  msclr::call_in_appdomain(appDomainId, &_OnFileDialog, wrapped, browser, mode, title, default_file_path, accept_filters, selected_accept_filter, callback);
-        } else {
-            return _OnFileDialog(wrapped, browser, mode, title, default_file_path, accept_filters, selected_accept_filter, callback);
-        }
-    }
-
 private:
     CefRefCount refct;
     CefDialogHandler* wrapped;
