@@ -18,9 +18,14 @@ namespace CefSharp.OffScreen
         private ManagedCefBrowserAdapter managedCefBrowserAdapter;
 
         /// <summary>
-        /// Contains the last rendering from Chromium.
+        /// Contains the last rendering from Chromium. Direct access
+        /// to the underlying Bitmap - there is no locking when trying
+        /// to access directly, use <see cref="BitmapLock"/> where appropriate.
+        /// A new bitmap is only created when it's size changes, otherwise
+        /// the back buffer for the bitmap is constantly updated.
+        /// Read the <see cref="InvokeRenderAsync"/> doco for more info.
         /// </summary>
-        private Bitmap bitmap;
+        public Bitmap Bitmap { get; private set; }
 
         /// <summary>
         /// Need a lock because the caller may be asking for the bitmap
@@ -34,6 +39,8 @@ namespace CefSharp.OffScreen
         /// and the ScreenshotAsync task will deadlock.
         /// </summary>
         private Size size = new Size(1366, 768);
+
+        private IBrowser browser;
 
         /// <summary>
         /// Flag to guard the creation of the underlying offscreen browser - only one instance can be created
@@ -63,6 +70,7 @@ namespace CefSharp.OffScreen
         public IGeolocationHandler GeolocationHandler { get; set; }
         public IBitmapFactory BitmapFactory { get; set; }
         public IRenderProcessMessageHandler RenderProcessMessageHandler { get; set; }
+        public IFindHandler FindHandler { get; set; }
 
         public event EventHandler<LoadErrorEventArgs> LoadError;
         public event EventHandler<FrameLoadStartEventArgs> FrameLoadStart;
@@ -143,12 +151,13 @@ namespace CefSharp.OffScreen
 
             if (disposing)
             {
+                browser = null;
                 IsBrowserInitialized = false;
 
-                if (bitmap != null)
+                if (Bitmap != null)
                 {
-                    bitmap.Dispose();
-                    bitmap = null;
+                    Bitmap.Dispose();
+                    Bitmap = null;
                 }
 
                 if (BrowserSettings != null)
@@ -199,9 +208,10 @@ namespace CefSharp.OffScreen
                 {
                     size = value;
 
-                    var browser = GetBrowser();
-
-                    browser.GetHost().WasResized();
+                    if (IsBrowserInitialized)
+                    {
+                        browser.GetHost().WasResized();
+                    }
                 }
             }
         }
@@ -222,7 +232,7 @@ namespace CefSharp.OffScreen
         {
             lock (BitmapLock)
             {
-                return bitmap == null ? null : new Bitmap(bitmap);
+                return Bitmap == null ? null : new Bitmap(Bitmap);
             }
         }
 
@@ -271,7 +281,11 @@ namespace CefSharp.OffScreen
         {
             Address = url;
 
-            this.GetMainFrame().LoadUrl(url);
+            //Destroy the frame wrapper when we're done
+            using (var frame = this.GetMainFrame())
+            {
+                frame.LoadUrl(url);
+            }
         }
 
         public void RegisterJsObject(string name, object objectToBind, bool camelCaseJavascriptNames = true)
@@ -312,7 +326,7 @@ namespace CefSharp.OffScreen
         {
             this.ThrowExceptionIfBrowserNotInitialized();
 
-            return managedCefBrowserAdapter.GetBrowser();
+            return browser;
         }
 
         ScreenInfo IRenderWebBrowser.GetScreenInfo()
@@ -348,7 +362,10 @@ namespace CefSharp.OffScreen
 
         /// <summary>
         /// Invoked from CefRenderHandler.OnPaint
-        /// Locking provided by OnPaint as this method is called in it's lock scope
+        /// A new <see cref="Bitmap"/> is only created when <see cref="BitmapInfo.CreateNewBitmap"/>
+        /// is true, otherwise the new buffer is simply copied into the backBuffer of the existing
+        /// <see cref="Bitmap"/> for efficency. Locking provided by OnPaint as this method is called
+        /// in it's lock scope.
         /// </summary>
         /// <param name="bitmapInfo">information about the bitmap to be rendered</param>
         void IRenderWebBrowser.InvokeRenderAsync(BitmapInfo bitmapInfo)
@@ -356,18 +373,26 @@ namespace CefSharp.OffScreen
             InvokeRenderAsync(bitmapInfo);
         }
 
+        /// <summary>
+        /// Invoked from CefRenderHandler.OnPaint
+        /// A new <see cref="Bitmap"/> is only created when <see cref="BitmapInfo.CreateNewBitmap"/>
+        /// is true, otherwise the new buffer is simply copied into the backBuffer of the existing
+        /// <see cref="Bitmap"/> for efficency. Locking provided by OnPaint as this method is called
+        /// in it's lock scope.
+        /// </summary>
+        /// <param name="bitmapInfo">information about the bitmap to be rendered</param>
         public virtual void InvokeRenderAsync(BitmapInfo bitmapInfo)
         {
             var gdiBitmapInfo = (GdiBitmapInfo)bitmapInfo;
             if (bitmapInfo.CreateNewBitmap)
             {
-                if (bitmap != null)
+                if (Bitmap != null)
                 {
-                    bitmap.Dispose();
-                    bitmap = null;
+                    Bitmap.Dispose();
+                    Bitmap = null;
                 }
 
-                bitmap = gdiBitmapInfo.CreateBitmap();
+                Bitmap = gdiBitmapInfo.CreateBitmap();
             }
 
             var handler = NewScreenshot;
@@ -421,8 +446,10 @@ namespace CefSharp.OffScreen
             }
         }
 
-        void IWebBrowserInternal.OnAfterBrowserCreated()
+        void IWebBrowserInternal.OnAfterBrowserCreated(IBrowser browser)
         {
+            this.browser = browser;
+
             IsBrowserInitialized = true;
 
             var handler = BrowserInitialized;
